@@ -98,7 +98,7 @@ Open **http://127.0.0.1:5000**, create an account, and add a task. Data lives in
 ## What works
 
 - Register, sign in, restore a session after refresh, and sign out.
-- Add, edit, complete, reopen, or delete your own tasks.
+- Add, edit, complete, reopen, or delete your own tasks. Changes update in place, with immediate completion feedback and rollback if a save fails.
 - Set an optional description, priority, and due date.
 - Filter by status and search titles/descriptions; results are paginated.
 - View total, in-progress, and completed counts across your workspace.
@@ -127,6 +127,12 @@ python -W error::ResourceWarning -m unittest discover -s tests -v
 ```
 
 17 integration tests cover the task lifecycle, cross-account isolation, rejected owner injection, persistence across app restarts, expired/revoked/rotated sessions, password/session storage, CSRF and origin checks, duplicate registration, validation, pagination/search, security headers, and authentication rate limiting.
+
+Six additional frontend-state tests cover optimistic completion, rollback, filtered membership, and preserving loaded pages:
+
+```sh
+node --experimental-default-type=module --test tests/task-state.test.mjs
+```
 
 Browser checks were also performed locally for registration, task creation and editing, completion, search, filters, session restore, and sign-out. See `docs/verification.md` for the final verification record.
 

@@ -44,13 +44,13 @@
       <section class="page-content" aria-labelledby="page-title">
         <div class="page-heading"><div><p class="eyebrow">A CLEARER DAY STARTS HERE</p><h1 id="page-title">My tasks<span class="heading-dot">.</span></h1><p class="muted">A little structure for everything on your plate.</p></div><button id="new-task" class="button primary" type="button"><span aria-hidden="true">＋</span> New task</button></div>
         <div class="stats" aria-label="Task summary"><div><span class="stat-label">TOTAL TASKS</span><strong id="total-count">0</strong><span class="stat-detail">Things on your radar</span></div><div><span class="stat-label">IN PROGRESS</span><strong id="doing-count">0</strong><span class="stat-detail">Moving things forward</span></div><div><span class="stat-label">COMPLETED</span><strong id="done-count">0</strong><span class="stat-detail">A little well-earned progress</span></div></div>
-        <div class="task-section">
+        <div id="task-section" class="task-section" aria-busy="false">
           <div class="task-toolbar"><div id="filters" class="filters" aria-label="Filter tasks"><button class="filter active" type="button" data-status="all" aria-pressed="true">All tasks</button><button class="filter" type="button" data-status="todo" aria-pressed="false">To do</button><button class="filter" type="button" data-status="doing" aria-pressed="false">In progress</button><button class="filter" type="button" data-status="done" aria-pressed="false">Done</button></div><label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" aria-label="Search tasks" maxlength="160" placeholder="Search tasks…"></label></div>
           <p id="list-error" class="form-error list-error" role="alert" hidden></p><button id="retry" class="text-button" type="button" hidden>Try loading again</button>
           <p id="loading" class="list-message" role="status" hidden>Loading your tasks…</p>
           <div id="task-list" class="task-list" aria-label="Tasks"></div>
           <div id="empty" class="empty-state" hidden><span class="empty-symbol" aria-hidden="true">✓</span><h2 id="empty-title">A clean slate.</h2><p id="empty-copy">Add your first task and make a little room for progress.</p><button id="empty-new" class="button secondary" type="button">Create your first task</button></div>
-          <footer class="list-footer"><p id="result-count" role="status"></p><button id="load-more" class="text-button" type="button" hidden>Load more tasks ↓</button><span>One step at a time.</span></footer>
+          <footer class="list-footer"><p id="result-count" role="status"></p><button id="load-more" class="text-button" type="button" hidden>Load more tasks ↓</button><span id="sync-status" role="status" aria-live="polite"></span><span>One step at a time.</span></footer>
         </div>
       </section>
     </main>

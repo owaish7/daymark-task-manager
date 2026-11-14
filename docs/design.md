@@ -58,7 +58,7 @@ The frontend has two main views: an authentication form and a task workspace. Th
 
 `api.js` handles JSON requests, errors, and the CSRF header. `app.js` holds the current user, active filter, task list, pagination offset, and selected task. Rendering functions create DOM nodes with `textContent` so task titles and descriptions stay plain text. Passwords are cleared after successful authentication. Credentials are not stored in localStorage.
 
-On startup, the client calls `/api/auth/me` to restore a session. A successful mutation reloads the list and counts so the server remains the source of truth. Forms disable while saving to avoid duplicate submissions. List requests use a version counter so an older search response cannot overwrite a newer one. The UI handles empty results, network failures, session expiry, and retrying list requests.
+On startup, the client calls `/api/auth/me` to restore a session. Task completion updates the selected row and counts immediately, then saves in the background. Failed saves roll back only the affected task. Created, edited, and deleted tasks update the current list in place without refetching it. Keyed DOM rows preserve focus and loaded pages; filter requests keep existing rows visible until the new response arrives and wait for pending writes to avoid painting stale state. Forms disable while saving to avoid duplicate submissions. List requests use a version counter so an older search response cannot overwrite a newer one. The UI handles empty results, network failures, session expiry, and retrying list requests.
 
 ## Authentication and authorization
 

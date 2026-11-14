@@ -1,9 +1,36 @@
 import { request, setCsrf } from './api.js';
+import { changeTask } from './task-state.js';
 
 const $ = id => document.getElementById(id);
 const statusLabels = { todo: 'To do', doing: 'In progress', done: 'Done' };
 let user = null, registering = false, filter = 'all', tasks = [], nextOffset = null;
 let editing = null, deleting = null, loadVersion = 0, searchTimer, toastTimer;
+let counts = { todo: 0, doing: 0, done: 0 }, resultTotal = 0, hasLoaded = false;
+let loadedQuery = { status: 'all', q: '' }, sessionVersion = 0;
+const taskNodes = new Map(), pendingWrites = new Map(), pendingTaskIds = new Set();
+
+const currentQuery = () => ({ status: filter, q: $('search').value.trim() });
+const queryMatches = () => JSON.stringify(currentQuery()) === JSON.stringify(loadedQuery);
+
+function setListBusy(busy) {
+  $('task-section').setAttribute('aria-busy', String(busy));
+  $('task-list').setAttribute('aria-busy', String(busy));
+}
+
+function trackWrite(key, action) {
+  loadVersion++;
+  setListBusy(false);
+  $('loading').hidden = true;
+  const operation = action();
+  pendingWrites.set(key, operation);
+  $('sync-status').textContent = 'Saving…';
+  const finish = () => {
+    pendingWrites.delete(key);
+    $('sync-status').textContent = pendingWrites.size ? 'Saving…' : '';
+    if (user && !pendingWrites.size && (!hasLoaded || !queryMatches())) loadTasks();
+  };
+  operation.then(finish, finish);
+}
 
 function showError(id, message = '') {
   $(id).textContent = message;
@@ -18,10 +45,15 @@ function notify(message) {
 }
 
 function showAuth(message = '') {
+  sessionVersion++;
   user = null;
   setCsrf('');
   loadVersion++;
   tasks = [];
+  taskNodes.clear();
+  hasLoaded = false;
+  counts = { todo: 0, doing: 0, done: 0 };
+  resultTotal = 0;
   $('task-list').replaceChildren();
   $('task-dialog').close();
   $('delete-dialog').close();
@@ -41,6 +73,7 @@ function handleExpired(error) {
 }
 
 async function openWorkspace(data) {
+  sessionVersion++;
   user = data.user;
   setCsrf(data.csrf_token);
   $('user-name').textContent = user.name;
@@ -123,41 +156,76 @@ $('load-more').addEventListener('click', () => loadTasks(true));
 
 async function loadTasks(append = false) {
   const version = ++loadVersion;
-  const params = new URLSearchParams({ status: filter, q: $('search').value.trim(), limit: '50', offset: String(append ? nextOffset || 0 : 0) });
-  $('loading').hidden = false;
-  $('load-more').hidden = true;
-  $('empty').hidden = true;
-  $('task-list').setAttribute('aria-busy', 'true');
+  const query = currentQuery();
+  $('loading').hidden = hasLoaded;
+  $('load-more').disabled = true;
+  setListBusy(true);
   showError('list-error');
   $('retry').hidden = true;
-  if (!append) { tasks = []; $('task-list').replaceChildren(); $('result-count').textContent = ''; }
   try {
+    // A filter request must not race a task save and paint the old server state.
+    await Promise.allSettled([...pendingWrites.values()]);
+    if (version !== loadVersion) return;
+    const params = new URLSearchParams({ ...query, limit: '50', offset: String(append ? nextOffset || 0 : 0) });
     const data = await request(`/tasks?${params}`);
     if (version !== loadVersion) return;
     tasks = append ? [...tasks, ...data.tasks] : data.tasks;
     nextOffset = data.next_offset;
-    const total = Object.values(data.counts).reduce((a, b) => a + b, 0);
-    $('total-count').textContent = total;
-    $('nav-count').textContent = total;
-    $('doing-count').textContent = data.counts.doing;
-    $('done-count').textContent = data.counts.done;
-    $('result-count').textContent = `Showing ${tasks.length} of ${data.total} ${data.total === 1 ? 'task' : 'tasks'}`;
-    $('task-list').replaceChildren(...tasks.map(taskCard));
-    const filtered = filter !== 'all' || $('search').value.trim();
-    $('empty-title').textContent = filtered ? 'Nothing here just yet.' : 'A clean slate.';
-    $('empty-copy').textContent = filtered ? 'Try another filter or search, or add a new task.' : 'Add your first task and make a little room for progress.';
-    $('empty-new').textContent = filtered ? 'Add a task' : 'Create your first task';
-    $('empty').hidden = tasks.length !== 0;
-    $('load-more').hidden = nextOffset === null;
+    counts = data.counts;
+    resultTotal = data.total;
+    loadedQuery = query;
+    hasLoaded = true;
+    renderTasks();
   } catch (error) {
     if (version !== loadVersion) return;
     if (!handleExpired(error)) { showError('list-error', error.message); $('retry').hidden = false; }
   } finally {
     if (version === loadVersion) {
       $('loading').hidden = true;
-      $('task-list').setAttribute('aria-busy', 'false');
+      $('load-more').disabled = false;
+      setListBusy(false);
     }
   }
+}
+
+function applyLocalChange(previous, next) {
+  const state = changeTask({ tasks, counts, total: resultTotal, nextOffset, query: loadedQuery }, previous, next);
+  ({ tasks, counts, nextOffset } = state);
+  resultTotal = state.total;
+  renderTasks();
+}
+
+function renderTasks() {
+  const list = $('task-list');
+  const focusedRow = document.activeElement?.closest('.task-card');
+  const focusedIndex = focusedRow ? [...list.children].indexOf(focusedRow) : -1;
+  const ids = new Set(tasks.map(task => task.id));
+  tasks.forEach((task, index) => {
+    let card = taskNodes.get(task.id);
+    if (!card) { card = taskCard(task); taskNodes.set(task.id, card); }
+    card.update(task);
+    if (list.children[index] !== card) list.insertBefore(card, list.children[index] || null);
+  });
+  for (const [id, card] of taskNodes) {
+    if (!ids.has(id)) { card.remove(); taskNodes.delete(id); }
+  }
+  if (focusedRow && !focusedRow.isConnected) {
+    const nextCard = list.children[Math.min(focusedIndex, list.children.length - 1)];
+    (nextCard?.querySelector('.complete-button') || $('filters').querySelector('.active')).focus({ preventScroll: true });
+  }
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+  $('total-count').textContent = total;
+  $('nav-count').textContent = total;
+  $('doing-count').textContent = counts.doing;
+  $('done-count').textContent = counts.done;
+  $('result-count').textContent = `Showing ${tasks.length} of ${resultTotal} ${resultTotal === 1 ? 'task' : 'tasks'}`;
+  const filtered = loadedQuery.status !== 'all' || loadedQuery.q;
+  $('empty-title').textContent = filtered ? 'Nothing here just yet.' : 'A clean slate.';
+  $('empty-copy').textContent = filtered ? 'Try another filter or search, or add a new task.' : 'Add your first task and make a little room for progress.';
+  $('empty-new').textContent = filtered ? 'Add a task' : 'Create your first task';
+  $('empty').hidden = tasks.length !== 0 || !hasLoaded;
+  $('load-more').hidden = nextOffset === null;
+  $('load-more').disabled = false;
 }
 
 function element(tag, className, text) {
@@ -168,48 +236,79 @@ function element(tag, className, text) {
 }
 
 function taskCard(task) {
-  const card = element('article', `task-card ${task.status === 'done' ? 'completed' : ''}`);
-  const toggle = element('button', 'complete-button', task.status === 'done' ? '✓' : '');
+  const card = element('article', 'task-card');
+  card.dataset.taskId = task.id;
+  card.task = task;
+  const toggle = element('button', 'complete-button');
   toggle.type = 'button';
-  toggle.setAttribute('aria-label', `${task.status === 'done' ? 'Reopen' : 'Complete'} ${task.title}`);
-  toggle.setAttribute('aria-pressed', String(task.status === 'done'));
-  toggle.addEventListener('click', async () => {
-    toggle.disabled = true;
-    try {
-      await request(`/tasks/${task.id}`, { method: 'PATCH', body: { status: task.status === 'done' ? 'todo' : 'done' } });
-      notify(task.status === 'done' ? 'Task reopened.' : 'One more thing done. Nice work.');
-      await loadTasks();
-    } catch (error) { if (!handleExpired(error)) notify(error.message); }
-    finally { toggle.disabled = false; }
+  toggle.addEventListener('click', () => {
+    const previous = card.task;
+    if (pendingTaskIds.has(previous.id)) return;
+    const optimistic = { ...previous, status: previous.status === 'done' ? 'todo' : 'done' };
+    const session = sessionVersion;
+    pendingTaskIds.add(previous.id);
+    applyLocalChange(previous, optimistic);
+    trackWrite(previous.id, async () => {
+      try {
+        const data = await request(`/tasks/${previous.id}`, { method: 'PATCH', body: { status: optimistic.status } });
+        if (session === sessionVersion) applyLocalChange(optimistic, data.task);
+      } catch (error) {
+        if (session === sessionVersion && !handleExpired(error)) {
+          applyLocalChange(optimistic, previous);
+          notify(`Change wasn't saved. ${error.message}`);
+        }
+      } finally {
+        pendingTaskIds.delete(previous.id);
+        if (session === sessionVersion) renderTasks();
+      }
+    });
   });
   const content = element('div', 'task-content');
-  content.append(element('h2', 'task-title', task.title));
-  if (task.description) content.append(element('p', 'task-description', task.description));
-  const meta = element('div', 'task-meta');
-  meta.append(element('span', `status-badge ${task.status}`, statusLabels[task.status]));
-  meta.append(element('span', `priority ${task.priority}`, `${task.priority[0].toUpperCase()}${task.priority.slice(1)} priority`));
-  if (task.due_date) {
-    const due = new Date(`${task.due_date}T00:00:00`);
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const overdue = due < today && task.status !== 'done';
-    meta.append(element('span', overdue ? 'due overdue' : 'due', `${overdue ? 'Overdue · ' : 'Due '}${due.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`));
-  }
-  content.append(meta);
   const actions = element('div', 'task-actions');
-  for (const [label, callback] of [['Edit', () => openEditor(task)], ['Delete', () => {
-    deleting = task;
-    $('delete-copy').textContent = `“${task.title}” will be removed from your workspace.`;
+  for (const [label, callback] of [['Edit', () => openEditor(card.task)], ['Delete', () => {
+    deleting = card.task;
+    $('delete-copy').textContent = `“${card.task.title}” will be removed from your workspace.`;
     showError('delete-error');
     $('delete-dialog').showModal();
     $('cancel-delete').focus();
   }]]) {
     const button = element('button', 'text-button', label);
     button.type = 'button';
-    button.setAttribute('aria-label', `${label} ${task.title}`);
+    button.dataset.action = label;
     button.addEventListener('click', callback);
     actions.append(button);
   }
   card.append(toggle, content, actions);
+  let signature = '';
+  card.update = next => {
+    card.task = next;
+    const pending = pendingTaskIds.has(next.id);
+    const nextSignature = JSON.stringify([next, pending]);
+    if (signature === nextSignature) return;
+    signature = nextSignature;
+    card.classList.toggle('completed', next.status === 'done');
+    card.classList.toggle('saving', pending);
+    toggle.textContent = next.status === 'done' ? '✓' : '';
+    toggle.setAttribute('aria-label', `${next.status === 'done' ? 'Reopen' : 'Complete'} ${next.title}`);
+    toggle.setAttribute('aria-pressed', String(next.status === 'done'));
+    toggle.setAttribute('aria-disabled', String(pending));
+    content.replaceChildren(element('h2', 'task-title', next.title));
+    if (next.description) content.append(element('p', 'task-description', next.description));
+    const meta = element('div', 'task-meta');
+    meta.append(element('span', `status-badge ${next.status}`, statusLabels[next.status]));
+    meta.append(element('span', `priority ${next.priority}`, `${next.priority[0].toUpperCase()}${next.priority.slice(1)} priority`));
+    if (next.due_date) {
+      const due = new Date(`${next.due_date}T00:00:00`);
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const overdue = due < today && next.status !== 'done';
+      meta.append(element('span', overdue ? 'due overdue' : 'due', `${overdue ? 'Overdue · ' : 'Due '}${due.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`));
+    }
+    content.append(meta);
+    actions.querySelectorAll('button').forEach(button => {
+      button.disabled = pending;
+      button.setAttribute('aria-label', `${button.dataset.action} ${next.title}`);
+    });
+  };
   return card;
 }
 
@@ -239,34 +338,44 @@ for (const id of ['task-dialog', 'delete-dialog']) $(id).addEventListener('cance
   if ($(id).querySelector('button[type="submit"]').disabled) event.preventDefault();
 });
 
-$('task-form').addEventListener('submit', async event => {
+$('task-form').addEventListener('submit', event => {
   event.preventDefault();
-  const body = { title: $('task-title').value, description: $('task-description').value,
-    status: $('task-status').value, priority: $('task-priority').value, due_date: $('task-due').value || null };
-  lockForm('task-form', true);
-  showError('task-error');
-  try {
-    await request(editing ? `/tasks/${editing.id}` : '/tasks', { method: editing ? 'PATCH' : 'POST', body });
-    $('task-dialog').close();
-    notify(editing ? 'Changes saved.' : 'Task added. You have a plan.');
-    await loadTasks();
-  } catch (error) { if (!handleExpired(error)) showError('task-error', error.message); }
-  finally { lockForm('task-form', false); }
+  trackWrite('editor', async () => {
+    const session = sessionVersion;
+    const previous = editing;
+    const body = { title: $('task-title').value, description: $('task-description').value,
+      status: $('task-status').value, priority: $('task-priority').value, due_date: $('task-due').value || null };
+    lockForm('task-form', true);
+    showError('task-error');
+    try {
+      const data = await request(previous ? `/tasks/${previous.id}` : '/tasks', { method: previous ? 'PATCH' : 'POST', body });
+      if (session !== sessionVersion) return;
+      applyLocalChange(previous, data.task);
+      $('task-dialog').close();
+      notify(previous ? 'Changes saved.' : 'Task added. You have a plan.');
+    } catch (error) { if (!handleExpired(error)) showError('task-error', error.message); }
+    finally { lockForm('task-form', false); }
+  });
 });
 
-$('delete-form').addEventListener('submit', async event => {
+$('delete-form').addEventListener('submit', event => {
   event.preventDefault();
   if (!deleting) return;
-  lockForm('delete-form', true);
-  showError('delete-error');
-  try {
-    await request(`/tasks/${deleting.id}`, { method: 'DELETE' });
-    $('delete-dialog').close();
-    notify('Task deleted.');
-    deleting = null;
-    await loadTasks();
-  } catch (error) { if (!handleExpired(error)) showError('delete-error', error.message); }
-  finally { lockForm('delete-form', false); }
+  trackWrite('delete', async () => {
+    const session = sessionVersion;
+    const previous = deleting;
+    lockForm('delete-form', true);
+    showError('delete-error');
+    try {
+      await request(`/tasks/${previous.id}`, { method: 'DELETE' });
+      if (session !== sessionVersion) return;
+      applyLocalChange(previous, null);
+      $('delete-dialog').close();
+      notify('Task deleted.');
+      deleting = null;
+    } catch (error) { if (!handleExpired(error)) showError('delete-error', error.message); }
+    finally { lockForm('delete-form', false); }
+  });
 });
 
 try { await openWorkspace(await request('/auth/me')); }
