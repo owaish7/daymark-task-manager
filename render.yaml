@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: daymark-task-manager
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: waitress-serve --host=0.0.0.0 --port=$PORT --url-scheme=https --call app:create_app
+    healthCheckPath: /api/health
+    envVars:
+      - key: COOKIE_SECURE
+        value: "1"
+      - key: DEMO_MODE
+        value: "1"
+      - key: TASK_DATABASE
+        value: /tmp/daymark/tasks.sqlite3

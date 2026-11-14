@@ -27,6 +27,7 @@ def create_app(config=None):
     app.config.update(
         DATABASE=os.environ.get("TASK_DATABASE", str(ROOT / "instance" / "tasks.sqlite3")),
         COOKIE_SECURE=os.environ.get("COOKIE_SECURE", "0") == "1",
+        DEMO_MODE=os.environ.get("DEMO_MODE", "0") == "1",
         MAX_CONTENT_LENGTH=16 * 1024,
         AUTH_RATE_LIMIT=20,
     )
@@ -154,6 +155,15 @@ def create_app(config=None):
 
     @app.get("/")
     def index():
+        if app.config["DEMO_MODE"]:
+            notice = (
+                '<aside class="deployment-note" role="note">'
+                'Hosted review demo · Accounts and tasks may reset after inactivity or redeployment. '
+                'Please use a test password.</aside>'
+            )
+            return (ROOT / "static" / "index.html").read_text(encoding="utf-8").replace(
+                "<!-- deployment-notice -->", notice
+            )
         return send_from_directory(app.static_folder, "index.html")
 
     @app.get("/api/health")

@@ -178,6 +178,8 @@ class TaskApiTests(unittest.TestCase):
         response.close()
         self.assertEqual(self.client.get('/api/tasks').headers['Cache-Control'], 'no-store')
         self.assertEqual(self.client.get('/api/health').json, {'status': 'ok'})
+        demo = create_app({'TESTING': True, 'DATABASE': self.database, 'DEMO_MODE': True})
+        self.assertIn(b'Hosted review demo', demo.test_client().get('/').data)
 
     def test_auth_rate_limit(self):
         app = create_app({'TESTING': True, 'DATABASE': self.database, 'AUTH_RATE_LIMIT': 1})
