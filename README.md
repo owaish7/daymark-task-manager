@@ -2,6 +2,10 @@
 
 A small task manager with user login, a persistent database, and a responsive browser interface. Built as a complete example of the SaaS feature described in the Adora written assignment.
 
+**[Open the live demo](https://daymark-task-manager-hp2u.onrender.com)** · [Read the full technical design](docs/design.md)
+
+Create a test account to try the app. The free demo may take about a minute to wake after inactivity, and its accounts and tasks can reset after sleep or redeployment.
+
 ![Daymark task workspace with synthetic review data](docs/daymark.jpg)
 
 ## Adora written assignment
@@ -23,6 +27,8 @@ I would like to learn how your team makes product and technical decisions, revie
 ### Q2. Design a simple SaaS feature: data model, API endpoints, and frontend structure
 
 For Q2, I built Daymark, a task manager with user login.
+
+Live demo: https://daymark-task-manager-hp2u.onrender.com
 
 Repository: https://github.com/owaish7/daymark-task-manager
 Detailed design: https://github.com/owaish7/daymark-task-manager/blob/main/docs/design.md

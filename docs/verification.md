@@ -31,4 +31,14 @@ Screenshots use synthetic local test data. These records and their database are 
 
 ## Limits
 
-No public hosting deployment, load test, screen-reader audit, or multi-browser compatibility test was performed. The development server is only for local review. Production configuration and remaining work are described in the README and design document.
+The app was deployed publicly on Render and checked over HTTPS. Registration, task creation, session/task restore after reload, and task completion passed on the live deployment. No load test, screen-reader audit, or multi-browser compatibility test was performed. The development server is only for local review. Production configuration and remaining work are described in the README and design document.
+
+## Hosted review demo
+
+- URL: https://daymark-task-manager-hp2u.onrender.com
+- Hosting: Render Free web service, Waitress, Python 3.14.10.
+- Runtime source commit verified: `1d92d5d6dffaf04d6aa210075f111119b6773f1e`.
+- Health endpoint: `/api/health`.
+- Secure cookies and same-origin writes worked in the browser over HTTPS.
+- `DEMO_MODE=1` displays the temporary-data notice. The free instance can sleep, and local SQLite data is not durable across sleep/restarts/deployments.
+- README and email links were updated after live verification.
