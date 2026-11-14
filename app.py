@@ -1,6 +1,7 @@
 """Same-origin task API and browser client. Run with: python app.py."""
 
 from collections import OrderedDict, deque
+from contextlib import closing
 from datetime import date
 from functools import wraps
 import hashlib
@@ -32,7 +33,7 @@ def create_app(config=None):
     if config:
         app.config.update(config)
     Path(app.config["DATABASE"]).parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(app.config["DATABASE"]) as conn:
+    with closing(sqlite3.connect(app.config["DATABASE"])) as conn:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript((ROOT / "schema.sql").read_text(encoding="utf-8"))
     attempts = OrderedDict()
